@@ -1,0 +1,1164 @@
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+// 
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Lesser General Public License for more details.
+// 
+// You should have received a copy of the GNU Lesser General Public License
+// along with this program.  If not, see http://www.gnu.org/licenses/.
+// 
+
+
+
+
+
+#include "IPv4Datagram.h"
+#include "IPv4ControlInfo.h"
+
+#include <stdio.h>
+#include "VCap.h"
+
+#include "msgW_m.h"
+#include "msgNeighborDisc_m.h"
+
+
+
+Define_Module(VCap);
+
+
+ VCap::VCap()
+ {
+
+
+    // TODO Auto-generated constructor stub
+
+}
+
+VCap::~VCap() {
+    // TODO Auto-generated destructor stub
+}
+
+
+
+void VCap::initialize(int stage){
+
+
+    if (stage==4){
+
+    std::cout<< "in initialize stage 4" << endl;
+    registerRoutingModule();
+
+    routingTable=check_and_cast<IRoutingTable*>(getParentModule()->getSubmodule("routingTable"));
+    myaddr=routingTable->getRouterId();
+    isW=par("isW");
+    isX=par("isX");
+    isY=par("isY");
+    isZ=par("isZ");
+    setW(INFINIYDIS);
+    setX(INFINIYDIS);
+    setY(INFINIYDIS);
+    setZ(INFINIYDIS);
+
+    msgNeighborDisc * neidiscmsg=new msgNeighborDisc();
+    neidiscmsg->setSrcIP(myaddr);
+
+
+    neighborDisc(neidiscmsg,HOP1_NEIGHBOR);//discover hop 1 neighbor
+
+ trueHit=0;
+ falseHit=0;
+ missed=0;
+
+    neighborfinish=new cMessage();
+     generateWfinish=new cMessage();
+     electXbegin=new cMessage();
+     generateXfinish=new cMessage();
+     electYbegin=new cMessage();
+     generateYfinish=new cMessage();
+
+     electZbegin=new cMessage();
+   generateZfinish=new cMessage();
+
+   readyToRoute=new cMessage();
+
+
+
+    startTime=simTime();
+    std::cout<< myaddr<<": intialize, startTime: "<<startTime<<endl;
+    scheduleAt(startTime+NEIGHDISC_FINISH,neighborfinish);
+    scheduleAt(startTime+W_GENERATION_FINISH,generateWfinish);
+    scheduleAt(startTime+X_ELECT,electXbegin);
+    scheduleAt(startTime+X_GENERATION_FINISH,generateXfinish);
+
+    scheduleAt(startTime+Y_ELECT,electYbegin);
+    scheduleAt(startTime+Y_GENERATION_FINISH,generateYfinish);
+
+    scheduleAt(startTime+Z_ELECT,electZbegin);
+    scheduleAt(startTime+Z_GENERATION_FINISH,generateZfinish);
+    scheduleAt(startTime+READY_TO_ROUTE,readyToRoute);
+
+    }
+
+
+}
+// use hop number to control the number of neighborhood
+void VCap::neighborDisc(msgNeighborDisc* msg,int hop){
+    // should be get from pkt
+    msg->setHop1_2(hop);
+    IPv4Datagram *p= new IPv4Datagram();
+    p->setSrcAddress(myaddr);
+    p->setDestAddress(IPv4Address::ALLONES_ADDRESS);
+
+    p->setTimeToLive(hop);
+
+    p->setTransportProtocol(IP_PROT_MANET);
+
+    IPv4ControlInfo *ipControlInfo = new IPv4ControlInfo();
+    ipControlInfo->setProtocol(IP_PROT_MANET);
+    ipControlInfo->setSrcAddr(myaddr);
+    ipControlInfo->setDestAddr(IPv4Address::ALLONES_ADDRESS);
+    ipControlInfo->setTimeToLive(hop);
+
+    p->setControlInfo(ipControlInfo);
+    p->encapsulate(msg);
+    float delay=exponential(10e-3);
+
+    sendDelayed(p,delay,"to_ip");
+    ev << "VCap::neighhorDisc(), hop number: " << hop << endl;
+
+}
+
+
+void VCap::handleMessage(cMessage *msg){
+
+    ev << "VCap::handleMessage()" <<  endl;
+    std::cout<< myaddr<<": handleMessage" << endl;
+
+     if(msg==neighborfinish){
+
+        std::cout<<myaddr<<": handleMessage, received self msg, neighbor disc finished at time: "<<simTime()<<endl;
+        //displayNeighborTable();
+        generateW();
+        return;
+    }
+
+  if (msg==generateWfinish){
+        //displayNeighborTable();
+        std::cout<<myaddr<<": handleMessage, received self msg, W generation finished at time: "<<simTime()<<endl;
+        updateNeighborTable();
+        return;
+    }
+
+   if(msg==electXbegin){
+
+        std::cout<<myaddr<<": handleMessage, received self msg, begin to elect X at time: "<<simTime()<<endl;
+        electX();
+        return;
+    }
+   if (msg==generateXfinish){
+           //displayNeighborTable();
+           std::cout<<myaddr<<": handleMessage, received self msg, X generation finished at time: "<<simTime()<<endl;
+           updateNeighborTable();
+           return;
+     }
+   if(msg==electYbegin){
+
+          std::cout<<myaddr<<": handleMessage, received self msg, begin to elect Y at time: "<<simTime()<<endl;
+          electY();
+          return;
+      }
+   if (msg==generateYfinish){
+              //displayNeighborTable();
+              std::cout<<myaddr<<": handleMessage, received self msg, X generation finished at time: "<<simTime()<<endl;
+              updateNeighborTable();
+              return;
+        }
+   if(msg==electZbegin){
+
+             std::cout<<myaddr<<": handleMessage, received self msg, begin to elect Y at time: "<<simTime()<<endl;
+             electZ();
+             return;
+         }
+   if (msg==generateZfinish){
+              //displayNeighborTable();
+              std::cout<<myaddr<<": handleMessage, received self msg, X generation finished at time: "<<simTime()<<endl;
+              updateNeighborTable();
+              par("IPstring").setStringValue(myaddr.str());
+              par("W").setLongValue(W);
+              par("X").setLongValue(X);
+              par("Y").setLongValue(Y);
+              par("Z").setLongValue(Z);
+
+              return;
+        }
+   if(msg==readyToRoute){
+       std::cout<<myaddr<<": handleMessage, readyToRoute msg at time: "<<simTime()<<endl;
+       getGlobalTable();
+       msgToRoute * msg=new msgToRoute();
+       forward(msg,globalTable);
+
+
+       std::cout<<myaddr<<", handleMessage, readyToRoute,end of the loop. "<<endl;
+
+
+
+      return ;
+
+   }
+   if(msgToRoute * msgtoroute=dynamic_cast<msgToRoute*>(msg)){
+       handleToRouteMsg(msgtoroute);
+       return;
+   }
+    if( msgNeighborDisc* neidisc=dynamic_cast<msgNeighborDisc*>(msg)){
+        std::cout<< myaddr<<": handleMessage, receive neighbor disc msg" << endl;
+        handleNeighborDisc(neidisc);
+        return ;
+    }
+
+    else if(msgW* msgw=dynamic_cast<msgW*>(msg)){
+
+           std::cout<< myaddr<<": handleMessage, not self msg, receive W  msg" <<msgw<< endl;
+
+           handleWMsg(msgw);
+            return;
+     }
+
+
+    else
+    {   ev<<"VCap: unknown pkt, drop."<<endl ;
+        std::cout<< myaddr<<": handleMessage, unknown msg kind: "<<msg<<", drop" << endl;
+
+        delete msg;
+        return ;
+    }
+  }
+void VCap::handleToRouteMsg(msgToRoute * msg){
+    std::cout<<myaddr<<": handleToRouteMsg, "<<simTime()<<endl;
+
+    VCoord destvc=msg->getDestVC();
+    IPv4Address destip=msg->getDestIP();
+    if (destvc.XYZequal(myvc)){
+        if(myaddr==destip){
+            trueHit++;
+        }
+        else{
+            falseHit++;
+        }
+       delete msg;
+
+    }
+    else if (!destvc.XYZequal(myvc)){
+        if(myaddr==destip){
+                  missed++;
+               }
+         forward(msg,routeCal(destvc));
+    }
+
+
+}
+void VCap::handleWMsg(msgW *msg){
+    ev << "VCap::handleWMsg()" <<  endl;
+    IPv4Address msgAddr=msg->getSrcIP();
+    if (msgAddr==myaddr){
+        delete msg;
+        return;
+    }
+    pathTable pt=msg->getPath();
+
+    pathTable::iterator pathIterator;
+    // not in the path, then check the hop number of the msg, compare to the node's W
+    for(pathIterator=pt.begin();pathIterator!=pt.end();pathIterator++){
+
+           // if myaddr is already in the path table, drop the msg
+         if(*pathIterator==myaddr){
+           std::cout<< myaddr<<": handleWMsg, in phase: "<< msg->getPhase()<< " this addr already in path: "<<*pathIterator<<endl ;
+          //  delete msg;
+            break;
+            return;
+         }
+      }
+
+    if(msg->getPhase()==PHASE_W){
+
+        std::cout<< myaddr<<": handleWMsg, in phase: "<< msg->getPhase()<< endl ;
+       // W is smaller or equal than the hop number of the message, no up date, drop the message
+        if (getW()<=msg->getHop()){
+              std::cout<< myaddr<<": handleWMsg, in phase: "<< msg->getPhase()<< " my own w: "<<getW()<< " is smaller than the msg hop number :"<<msg->getHop()<<", drop, at time: "<<simTime()<<endl ;
+              pathTable::iterator it;
+
+              for (it=msg->getPath().begin();it!=msg->getPath().end();it++){
+              std::cout<< myaddr<<": handleWMsg, in phase: "<< msg->getPhase()<< " msg path: "<<*it<<endl;
+              }
+
+              // delete msg;
+              return;
+        }
+           // W is larger than hop number of the message,
+           //update the node's W and add my addr to msg path and forward it to hop 1 neighbor
+        else if (getW()>msg->getHop()){
+            std::cout<< myaddr<<": handleWMsg, in phase: "<< msg->getPhase()<< " my own w: "<<getW()<< " is larger than the msg hop number :"<<msg->getHop()<<", update, at time: "<<simTime()<<endl ;
+            int currenthp=msg->getHop();
+            setW(currenthp);
+            pt.push_back(myaddr);
+            msg->setPath(pt);
+            currenthp++;
+
+            msg->setHop(currenthp);
+            forward(msg,neighborTable);
+          }
+
+    }
+
+    if(msg->getPhase()==PHASE_X && isX){
+        if(W<msg->getSrcW()){
+            isX=false;
+            srcWmax=msg->getSrcW();
+            IPmax=msg->getSrcIP();
+            int currenthp=msg->getHop();
+            X=currenthp;
+
+            pt.push_back(myaddr);
+           msg->setPath(pt);
+            currenthp++;
+
+             msg->setHop(currenthp);
+             forward(msg,neighborTable);
+             return;
+
+        }
+        if (W==msg->getSrcW()&& myaddr<msg->getSrcIP()){
+            isX=false;
+            srcWmax=msg->getSrcW();
+            IPmax=msg->getSrcIP();
+            int currenthp=msg->getHop();
+            X=currenthp;
+
+            pt.push_back(myaddr);
+           msg->setPath(pt);
+            currenthp++;
+
+            msg->setHop(currenthp);
+            forward(msg,neighborTable);
+            return;
+        }
+    }
+    if(msg->getPhase()==PHASE_X && !isX){
+        //the msg with smaller src w will be considered, if equal src w, consider larger ip
+
+         if (msg->getSrcW()>srcWmax){
+              std::cout<< myaddr<<": handleWMsg, in phase: "<< msg->getPhase()<< " smaller srcW get, msg.srcW: "<<msg->getSrcW()<<" previous minimum srcW: "<<srcWmax<<", at time: "<<simTime()<<endl ;
+
+              srcWmax=msg->getSrcW();
+              IPmax=msg->getSrcIP();
+
+              int currenthp=msg->getHop();
+              X=currenthp;
+
+              pt.push_back(myaddr);
+              msg->setPath(pt);
+              currenthp++;
+
+              msg->setHop(currenthp);
+              forward(msg,neighborTable);
+              return;
+
+         }
+         else if (msg->getSrcW()<srcWmax){
+
+             std::cout<< myaddr<<": handleWMsg, in phase: "<< msg->getPhase()<< " larger srcW get, msg.srcW: "<<msg->getSrcW()<<" previous minimum srcW: "<<srcWmax<<", no update, at time: "<<simTime()<<endl ;
+            // delete msg;
+             return;
+         }
+
+         else if (msg->getSrcW()==srcWmax){
+             if (msg->getSrcIP()>IPmax){
+              std::cout<< myaddr<<": handleWMsg, in phase: "<< msg->getPhase()<< " same srcW, larger srcIP get, msg.srcIP: "<<msg->getSrcIP()<<" previous max srcIP: "<<IPmax<<",update at time: "<<simTime()<<endl ;
+              IPmax=msg->getSrcIP();
+
+              int currenthp=msg->getHop();
+              X=currenthp;
+              pt.push_back(myaddr);
+              msg->setPath(pt);
+              currenthp++;
+
+              msg->setHop(currenthp);
+              forward(msg,neighborTable);
+              return;
+             }
+             else if(msg->getSrcIP()<IPmax){
+                 std::cout<< myaddr<<": handleWMsg, in phase: "<< msg->getPhase()<< " same srcW, smaller srcIP get, msg.srcIP: "<<msg->getSrcIP()<<" previous max srcIP: "<<IPmax<<", no update, at time: "<<simTime()<<endl ;
+                 //delete msg;
+                 return ;
+             }
+             else if (msg->getSrcIP()==IPmax){
+                 if(X>msg->getHop()){
+                    int currenthp=msg->getHop();
+                    X=currenthp;
+                    pt.push_back(myaddr);
+                    msg->setPath(pt);
+                    currenthp++;
+
+                    msg->setHop(currenthp);
+                    forward(msg,neighborTable);
+                    return;
+                 }
+                 else {
+                   //  delete msg;
+                      return ;
+                 }
+
+             }
+         }
+    }
+    if(msg->getPhase()==PHASE_Y&&isY){
+        if (msg->getSrcX()>X){
+            isY=false;
+            srcXmax=msg->getSrcX();
+             IPmax=msg->getSrcIP();
+
+           int currenthp=msg->getHop();
+           Y=currenthp;
+           pt.push_back(myaddr);
+            msg->setPath(pt);
+            currenthp++;
+
+             msg->setHop(currenthp);
+             forward(msg,neighborTable);
+              return;
+        }
+        else if(msg->getSrcX()==X&&msg->getSrcIP()>myaddr){
+             isY=false;
+            IPmax=msg->getSrcIP();
+
+            int currenthp=msg->getHop();
+             Y=currenthp;
+              pt.push_back(myaddr);
+             msg->setPath(pt);
+            currenthp++;
+
+              msg->setHop(currenthp);
+             forward(msg,neighborTable);
+              return;
+        }
+
+         }
+     if(msg->getPhase()==PHASE_Y&&!isY){
+         if(msg->getSrcX()<srcXmax){
+             delete msg;
+             std::cout<<myaddr<<": handleWmsg,"<<", msg has smaller srcX, drop"<<endl;
+             return ;
+         }
+         else if (msg->getSrcX()==srcXmax){
+             if(IPmax>msg->getSrcIP()){
+                 delete msg;
+                  std::cout<<myaddr<<": handleWmsg,"<<", same X, msg has smaller srcIP, drop"<<endl;
+                  return ;
+             }
+             else if(IPmax<msg->getSrcIP()){
+                 IPmax=msg->getSrcIP();
+
+                 int currenthp=msg->getHop();
+                 Y=currenthp;
+                  pt.push_back(myaddr);
+                 msg->setPath(pt);
+                  currenthp++;
+
+                   msg->setHop(currenthp);
+                   forward(msg,neighborTable);
+                   return;
+
+             }
+             else if (IPmax==msg->getSrcIP()){
+                 if (Y>msg->getHop()){
+                     int currenthp=msg->getHop();
+                      Y=currenthp;
+                      pt.push_back(myaddr);
+                      msg->setPath(pt);
+                      currenthp++;
+
+                      msg->setHop(currenthp);
+                      forward(msg,neighborTable);
+                      return;
+                 }
+                 else {
+                     delete msg;
+                     return;
+                 }
+
+
+             }
+
+         }
+         else if (msg->getSrcX()>srcXmax){
+             srcXmax=msg->getSrcX();
+             IPmax=msg->getSrcIP();
+
+             int currenthp=msg->getHop();
+             Y=currenthp;
+              pt.push_back(myaddr);
+             msg->setPath(pt);
+              currenthp++;
+
+             msg->setHop(currenthp);
+               forward(msg,neighborTable);
+               return;
+         }
+
+     }
+     if(msg->getPhase()==PHASE_Z&&isZ){
+         if(myaddr<msg->getSrcIP()){
+             isZ=false;
+             IPmax=msg->getSrcIP();
+
+             int currenthp=msg->getHop();
+             Z=currenthp;
+             pt.push_back(myaddr);
+             msg->setPath(pt);
+            currenthp++;
+
+             msg->setHop(currenthp);
+             forward(msg,neighborTable);
+             return;
+         }
+
+     }
+     if(msg->getPhase()==PHASE_Z&&!isZ){
+         if(msg->getSrcIP()<IPmax){
+             delete msg;
+             return;
+         }
+         else if(msg->getSrcIP()==IPmax){
+            if(Z>msg->getHop()){
+                int currenthp=msg->getHop();
+                Z=currenthp;
+                pt.push_back(myaddr);
+                 msg->setPath(pt);
+                 currenthp++;
+                 msg->setHop(currenthp);
+                  forward(msg,neighborTable);
+                  return;
+            }
+            else {
+                delete msg;
+                return;
+            }
+         }
+         else if(msg->getSrcIP()>IPmax){
+             IPmax=msg->getSrcIP();
+
+                          int currenthp=msg->getHop();
+                          Z=currenthp;
+                           pt.push_back(myaddr);
+                          msg->setPath(pt);
+                           currenthp++;
+
+                          msg->setHop(currenthp);
+                            forward(msg,neighborTable);
+                            return;
+         }
+     }
+}
+
+
+
+
+
+void VCap::handleNeighborDisc(msgNeighborDisc *msg){
+        // ev << "VCap::handleNeigborDisc()" <<  endl;
+         std::cout<< myaddr<<": handleNeighborDisc, from:"<<myaddr<<endl;
+         const IPv4Address neighborAddr=msg->getSrcIP();
+
+          VCoord vc(msg->getW(),msg->getX(),msg->getY(),msg->getZ());
+            if(neighborAddr==myaddr)
+            {
+             ev << "VCap::handleNeighborDisc(), Discarding msgNeighborDisc from myself" << endl;
+             delete msg;
+             std::cout<< myaddr<<": handleNeighborDisc"<<", msg ip:"<<neighborAddr<<",msg from my ip, drop msg, time: "<<simTime()<<endl;
+
+             return;
+             }
+
+            else if (isEntryExisted(neighborAddr))// if it is in the hop 1 neighborhood
+            {
+
+                std::cout<< myaddr<<": handleNeighborDisc: no msg from myself, time: "<<simTime()<<endl;
+
+
+            // Entry exists in hop 1 neighborhood, no update:
+               if(!isUpdate(neighborAddr,vc))
+                {
+                //ev << "VCap::handleNeighborDisc(), Entry already exists in hop1 neighbor table, discarding" << endl;
+                delete msg;
+
+                std::cout<< myaddr<<": handleNeighborDisc"<<", msg ip:"<<neighborAddr<<", but no update, drop msg, time: "<<simTime()<<endl;
+
+                return;
+                }
+
+            // Entry exists,  but need to be updated:
+                if(isUpdate(neighborAddr,vc))
+                {
+                // delete old entry:
+                 std::cout<< myaddr<<": handleNeighborDisc"<<", msg ip:"<<neighborAddr<<", update, time: "<<simTime()<<endl;
+                 updateEntry(neighborAddr,vc);
+                 //displayNeighborTable();s
+                return;
+                 }
+            // Entry does not exist:
+
+
+          }
+
+           else if (!isEntryExisted(neighborAddr))
+           {
+               std::cout<< myaddr<<": handleNeighborDisc"<<", msg ip:"<<neighborAddr<<", add new entry, W:"<< vc.W<<"time: "<<simTime()<<endl;
+               bubble("add");
+               addEntry(neighborAddr,vc);
+
+               //if (simTime()>=startTime+WFINISHTIME){
+            //   updateNeighborTable();
+               //}
+               return;
+            }
+    //
+
+
+}
+
+void VCap::electX(){
+
+    NeighborTable::iterator neit;
+    srcWmax=0;
+    IPmax.set(IPv4Address::UNSPECIFIED);
+
+    for(neit=neighborTable.begin();neit!=neighborTable.end();neit++){
+      VCoord vc=neit->second;
+
+      if(vc.W>W){
+          isX=false;
+          std::cout<<myaddr<<": electX, larger W in neighborhoodfound, isX: "<<isX<<endl;
+
+          break;
+
+      }
+      else if(vc.W==W){
+           if(myaddr>neit->first){
+            isX=true;
+            std::cout<<myaddr<<": electX, my W is equal to W in the neighborhood, my ip is larger, isX: "<<isX<<endl;
+           }
+           else if(myaddr<neit->first){
+               isX=false;
+               std::cout<<myaddr<<": electX, my W is equal to W in the neighborhood, my ip is smaller, isX: "<<isX<<endl;
+               break;
+           }
+
+
+      }
+      else if(vc.W<W){
+          isX=true;
+          std::cout<<myaddr<<": electX, my W is larger than W in the neighborhood, isX: "<<isX<<endl;
+
+      }
+
+
+
+     }
+
+    std::cout<<myaddr<<": electX, end of the loop, isX: "<<isX<<", at time: "<<simTime()<<endl;
+    if(isX){
+        X=0;
+        msgW * msgw=new msgW;
+
+
+        pathTable* pt=new pathTable;
+        pt->push_back(myaddr);
+        msgw->setPath( *pt);
+
+        msgw->setPhase(PHASE_X);
+        msgw->setSrcIP(myaddr);
+        msgw->setSrcW(W);
+        msgw->setHop(1);
+        forward(msgw,neighborTable);
+
+    }
+
+}
+void VCap::electY(){
+
+    NeighborTable::iterator neit;
+       srcXmax=0;
+       gamma=1;
+       IPmax.set(IPv4Address::UNSPECIFIED);
+
+       for(neit=neighborTable.begin();neit!=neighborTable.end();neit++){
+         VCoord vc=neit->second;
+         std::cout<<myaddr<<": electY, in loop "<<endl;
+         if(W<=gamma){
+             isY=false;
+             std::cout<<myaddr<<": electY, my w is smaller than gamma, isY: "<<isY<<endl;
+
+             break;
+         }
+         else isY=true;
+          if(vc.W>gamma){
+
+             if (vc.X>X){
+                 isY=false;
+                 std::cout<<myaddr<<": electY, my x is smaller than x in the neighborhood, isY: "<<isY<<endl;
+                 break;
+             }
+             if(vc.X==X){
+                if(myaddr>neit->first){
+                            isY=true;
+                            std::cout<<myaddr<<": electY, my x is equal to x in the neighborhood, my ip is larger, isY: "<<isY<<endl;
+                           }
+                           else if(myaddr<neit->first){
+                               isY=false;
+                               std::cout<<myaddr<<": electX, my W is equal to W in the neighborhood, my ip is smaller, isY: "<<isY<<endl;
+                               break;
+                           }
+
+
+               }
+              else if(vc.X<X){
+               isY=true;
+               std::cout<<myaddr<<": electY, my X is larger than X in the neighborhood, isY: "<<isY<<endl;
+
+                      }
+
+
+         }
+
+
+
+
+        }
+
+       std::cout<<myaddr<<": electY, end of the loop, isY: "<<isY<<", at time: "<<simTime()<<endl;
+       if(isY){
+               Y=0;
+               msgW * msgw=new msgW;
+
+
+               pathTable* pt=new pathTable;
+               pt->push_back(myaddr);
+               msgw->setPath( *pt);
+
+               msgw->setPhase(PHASE_Y);
+               msgw->setSrcIP(myaddr);
+               msgw->setSrcX(X);
+               msgw->setHop(1);
+               forward(msgw,neighborTable);
+
+           }
+
+
+}
+void VCap::electZ(){
+    NeighborTable::iterator neit;
+          srcWmax=0;
+          IPmax.set(IPv4Address::UNSPECIFIED);
+          for(neit=neighborTable.begin();neit!=neighborTable.end();neit++){
+                   VCoord vc=neit->second;
+
+                   if(!XYRule(X,Y)){
+                       isZ=false;
+                       std::cout<<myaddr<<": electZ, disobey the rule, isZ: "<<isZ<<endl;
+
+                       break;
+                   }
+                   else isZ=true;
+                   if(XYRule(X,Y)&&XYRule(vc.X,vc.Y)){
+                      // if(XYRule(vc.X,vc.Y))
+
+                       if (vc.W>W){
+                           isZ=false;
+                           break;
+                       }
+                       if(vc.W==W){
+                          if(myaddr>neit->first){
+                            isZ=true;
+                            std::cout<<myaddr<<": electZ, my W is equal to W in the neighborhood, my ip is larger, isZ: "<<isZ<<endl;
+                              }
+                            else if(myaddr<neit->first){
+                             isZ=false;
+                               std::cout<<myaddr<<": electZ, my W is equal to W in the neighborhood, my ip is smaller, isZ: "<<isZ<<endl;
+                                         break;
+                                     }
+
+
+                         }
+                        else if(vc.W<W){
+                         isZ=true;
+                         std::cout<<myaddr<<": electZ, my W is larger than W in the neighborhood, isZ: "<<isZ<<endl;
+
+                                }
+
+
+                   }
+
+
+
+
+                  }
+
+                 std::cout<<myaddr<<": electZ, end of the loop, isZ: "<<isZ<<", at time: "<<simTime()<<endl;
+                 if(isZ){
+                     Z=0;
+                     msgW * msgw=new msgW;
+
+
+                      pathTable* pt=new pathTable;
+                      pt->push_back(myaddr);
+                      msgw->setPath( *pt);
+
+                      msgw->setPhase(PHASE_Z);
+                       msgw->setSrcIP(myaddr);
+                      msgw->setSrcW(W);
+                     msgw->setHop(1);
+                     forward(msgw,neighborTable);
+                 }
+
+
+}
+bool VCap::XYRule(int x, int y){
+         return ((x-y)==1)||((x-y)==-1);
+}
+
+bool VCap::equal(const msgNeighborDisc& a, const msgNeighborDisc& b){
+   return    a.getSrcIP()==b.getSrcIP()
+             && a.getW()==b.getW()
+             && a.getX()==b.getX()
+             && a.getY()==b.getY()
+             && a.getZ()==b.getZ();
+}
+
+NeighborTable VCap::routeCal(VCoord destvc){
+    int mindis=INFINIYDIS;
+    int d;
+    NeighborTable mindisTable;
+    VCoord currentvc;
+    for(NeighborTable::iterator neit=neighborTable.begin();neit!=neighborTable.end();neit++){
+        currentvc=neit->second;
+        d=(currentvc.X-destvc.X)*(currentvc.X-destvc.X)+(currentvc.Y-destvc.Y)*(currentvc.Y-destvc.Y)+(currentvc.Z-destvc.Z)*(currentvc.Z-destvc.Z);
+
+        if(d<mindis){
+            mindis=d;
+            mindisTable.clear();
+            mindisTable.insert(std::pair<IPv4Address,VCoord>(neit->first,currentvc));
+            std::cout<<myaddr<<": routeCal, smaller disance found."<<endl;
+        }
+        else if(d==mindis){
+            mindisTable.insert(std::pair<IPv4Address,VCoord>(neit->first,currentvc));
+            std::cout<<myaddr<<": routeCal, equal disance found."<<endl;
+        }
+    }
+    return mindisTable;
+
+}
+void VCap::forward(cPacket *msg, IPv4Address ip){
+    IPv4Datagram *p= new IPv4Datagram();
+                   p->setSrcAddress(myaddr);
+                   p->setDestAddress(ip);
+                   std::cout<<myaddr<<": forward, the destination addr is set to :"<< ip<<endl;
+
+                   p->setTimeToLive(1);
+
+                   p->setTransportProtocol(IP_PROT_MANET);
+
+                   IPv4ControlInfo *ipControlInfo = new IPv4ControlInfo();
+                   ipControlInfo->setProtocol(IP_PROT_MANET);
+                   ipControlInfo->setSrcAddr(myaddr);
+                   ipControlInfo->setTimeToLive(1);
+                   ipControlInfo->setDestAddr(ip);
+
+                   p->setControlInfo(ipControlInfo);
+
+
+                    p->encapsulate(msg);
+
+
+                   float delay=exponential(10e-3);
+                   sendDelayed(p,delay,"to_ip");
+                   std::cout<<myaddr<<": forward, msg forwarded to "<<p->getDestAddress()<<endl;
+
+}
+void VCap::forward(cPacket *msg, NeighborTable neighborTable)
+{
+       int couter=0;
+
+           for(NeighborTable::iterator neit=neighborTable.begin();neit!=neighborTable.end();neit++)
+            {
+               if(msgToRoute * msgtoroute=dynamic_cast<msgToRoute*>(msg)){
+                   std::cout<<myaddr<<", forward, msgToRoute to forward, cast to msgToRoute"<<endl;
+               }
+               IPv4Datagram *p= new IPv4Datagram();
+               p->setSrcAddress(myaddr);
+               p->setDestAddress(neit->first);
+               std::cout<<myaddr<<": forward, the destination addr is set to :"<< neit->first<<endl;
+
+               p->setTimeToLive(1);
+
+               p->setTransportProtocol(IP_PROT_MANET);
+
+               IPv4ControlInfo *ipControlInfo = new IPv4ControlInfo();
+               ipControlInfo->setProtocol(IP_PROT_MANET);
+               ipControlInfo->setSrcAddr(myaddr);
+               ipControlInfo->setTimeToLive(1);
+               ipControlInfo->setDestAddr(neit->first);
+
+               p->setControlInfo(ipControlInfo);
+               std::cout<<myaddr<<": forward, couter: "<<couter<<endl;
+
+               if (couter>=1){
+               cPacket * newmsg=msg->dup();
+               p->encapsulate(newmsg);
+               std::cout<<myaddr<<": forward, encapsulate duplicated msg "<<endl;
+               }
+               else{
+                p->encapsulate(msg);
+               }
+
+               float delay=exponential(10e-3);
+               sendDelayed(p,delay,"to_ip");
+               std::cout<<myaddr<<": forward, msg forwarded to "<<p->getDestAddress()<<endl;
+               couter++;
+            }
+
+
+}
+
+
+int VCap::getW(){return W;}
+
+int VCap::getX(){return X;}
+int VCap::getY(){return Y;}
+int VCap::getZ(){return Z;}
+
+void VCap::setW(int i){ this->W=i;}
+
+void VCap::setX(int i){ this->X=i;}
+void VCap::setY(int i){ this->Y=i;}
+void VCap::setZ(int i){ this->Z=i;}
+VCoord VCap::getMyvc(){
+    return myvc;
+}
+IPv4Address VCap::getMyaddr(){
+    return myaddr;
+}
+
+uint32_t VCap::getRoute(const Uint128 &, std::vector<Uint128> &){
+    return 0;
+}
+
+bool VCap::getNextHop(const Uint128 &, Uint128 &add, int &iface, double &cost){
+    return false;
+}
+
+void VCap::setRefreshRoute(const Uint128 &destination, const Uint128 & nextHop,bool isReverse){
+
+}
+
+bool VCap::isProactive() {
+    return false;
+}
+
+bool VCap::isOurType(cPacket *){
+    return false;
+}
+
+bool VCap::getDestAddress(cPacket *, Uint128 &){
+    return false;
+}
+
+
+void VCap::getGlobalTable(){
+    cTopology *topo=new cTopology;
+     //topo->extractByNedTypeName(cStringTokenizer("**.host[*] **.router*").asVector());
+     topo->extractByParameter("IPstring");
+
+     std::cout<<myaddr<<", handleMessage, readyToRoute, number of node: "<<topo->getNumNodes()<<endl;
+    // std::cout<<myaddr<<", handleMessage, readyToRoute, path of this node: "<<topo->getNodeFor(getParentModule())->getModule()->getFullPath()<<endl;
+
+
+     for (int i = 0; i < topo->getNumNodes(); i++) {
+         /*std::cout<<endl;
+         std::cout<<myaddr<<", handleMessage, readyToRoute, in loop, current i:"<<i<<endl;
+         std::cout<<myaddr<<", handleMessage, current module full path:"<<topo->getNode(i)->getModule()->getFullPath()<<endl;
+         std::cout<<myaddr<<", handleMessage, current module full name:"<<topo->getNode(i)->getModule()->getFullName()<<endl;
+        */
+         std::string currentipstring=topo->getNode(i)->getModule()->getAncestorPar("IPstring").info();
+         /*
+         std::cout<<myaddr<<", handleMessage, currentipstring (info): "<<currentipstring<<endl;
+         std::cout<<myaddr<<", handleMessage, IPstring name "<<topo->getNode(i)->getModule()->getAncestorPar("IPstring").getName()<<endl;
+        */
+         std::string newcurrentipstring;
+         for(unsigned int j = 0; currentipstring[j] != '\0'; j++){
+          if(currentipstring[j]=='\"')
+           { continue;
+                        //how do I cut strings into words when it ends with whitespace or tab or punctuation character?
+                     }
+                     newcurrentipstring+=currentipstring[j];
+
+               }
+            std::cout<<myaddr<<", handleMessage, new current ip as string  :"<<newcurrentipstring<<endl;
+            IPv4Address currentip;
+            currentip.set(newcurrentipstring.c_str());
+            std::cout<<myaddr<<", handleMessage, new current ip as IPv4Address :"<<currentip<<endl;
+            if (myaddr==currentip) {
+                std::cout<<myaddr<<", handleMessage, readyToRoute, in loop, current i:"<<i<<", current node is my node"<<endl;
+                  continue; // skip ourselves
+                       }
+            int currentw;
+            std::istringstream ssw(topo->getNode(i)->getModule()->getAncestorPar("W").info());
+            ssw >> currentw;
+          //  std::cout<<myaddr<<", handleMessage, current W as int:"<<currentw<<endl;
+           // std::cout<<myaddr<<", handleMessage, current W as string:"<<topo->getNode(i)->getModule()->getAncestorPar("W").info()<<endl;
+
+            int currentx;
+            std::istringstream ssx(topo->getNode(i)->getModule()->getAncestorPar("X").info());
+            ssx >> currentx;
+
+            int currenty;
+            std::istringstream ssy(topo->getNode(i)->getModule()->getAncestorPar("Y").info());
+            ssy >> currenty;
+
+            int currentz;
+            std::istringstream ssz(topo->getNode(i)->getModule()->getAncestorPar("Z").info());
+            ssz >> currentz;
+            VCoord currentvc(currentw,currentx,currenty,currentz);
+
+            globalTable.insert(std::pair<IPv4Address,VCoord>(currentip,currentvc));
+
+
+}
+
+void VCap::addEntry(IPv4Address ip,VCoord vc){
+   //  std::cout<<myaddr<<": addEntry, W:"<< vc.W <<", time: "<<simTime()<<endl;
+     neighborTable.insert(std::pair<IPv4Address,VCoord>(ip,vc));
+
+     updateNeighborRoute(ip);
+     std::cout<<myaddr<<": addEntry,"<< ip<<", time: "<<simTime()<<endl;
+
+     //displayNeighborTable();
+ }
+
+void VCap::updateEntry(IPv4Address ip,VCoord vc){
+     NeighborTable::iterator neit=neighborTable.find(ip);
+
+     neighborTable.erase(neit);
+     VCap::neighborTable.insert(std::pair<IPv4Address,VCoord >(ip,vc));
+ }
+
+ //if the ip is existed in the table
+ bool VCap::isEntryExisted (IPv4Address ip){
+     std::cout<< myaddr<< ": isEntryExisted" << endl;
+     NeighborTable::iterator neit=neighborTable.find(ip);
+     bool b=neit!=neighborTable.end();
+     std::cout<< myaddr<< ": isEntryExisted, boolean:" << b<< endl;
+     return neit!=neighborTable.end();
+ }
+void VCap::updateNeighborRoute(const IPv4Address& dst){
+
+        IPv4Route* pathToDst=new IPv4Route();
+        pathToDst->setDestination(dst);
+        pathToDst->setNetmask(IPv4Address("255.255.255.255"));
+        pathToDst->setGateway(dst);
+        pathToDst->setInterface(routingTable->getInterfaceByAddress(myaddr));
+        pathToDst->setSource(IPv4Route::MANET);
+        routingTable->addRoute(pathToDst);
+}
+
+bool VCap::isUpdate(IPv4Address ip,VCoord  newvc){
+    //
+   NeighborTable::iterator neit=neighborTable.find(ip);
+   if (neit!=neighborTable.end())
+   {   std::cout<<myaddr<<": isUpdate, found ip entry in neighbor table"<<endl;
+       VCoord  vc =neit->second;
+       std::cout<<myaddr<<": isUpdate, W of old vc: "<<vc.W<<", W of new vc: "<<newvc.W<<endl;
+       std::cout<<myaddr<<": isUpdate, X of old vc: "<<vc.X<<", W of new vc: "<<newvc.X<<endl;
+       std::cout<<myaddr<<": isUpdate, Y of old vc: "<<vc.Y<<", W of new vc: "<<newvc.Y<<endl;
+       std::cout<<myaddr<<": isUpdate, Z of old vc: "<<vc.Z<<", W of new vc: "<<newvc.Z<<endl;
+       std::cout<<myaddr<<": isUpdate, return value:"<<!(newvc==vc)<<endl;
+       return !(newvc==vc);
+
+   }
+   else
+       return true;
+
+}
+void VCap::finish (){
+   // std::cout<<myaddr<<": finish"<<endl;
+   //displayNeighborTable();
+/*
+    if (trueHit!=0||falseHit!=0||missed!=0){
+      std::cout<<myaddr<<": finish, trueHit:"<<trueHit<<", falseHit:"<<falseHit<<", missed: "<<missed<<endl;
+    }
+*/
+    displayNeighborTable(globalTable);
+}
+
+void VCap::displayNeighborTable(NeighborTable table){
+    for (NeighborTable::iterator it=table.begin(); it!=table.end();it++){
+        VCoord vcd=it->second;
+
+        std::cout<< myaddr<<": displayNeighborTable, my own coord is: "<<getW()<<","<<getX()<<","<<getY()<<","<< getZ()<<", current entry in neighbor table: IP"<<it->first<<", W: "<<vcd.W<<", X: "<<vcd.X<<", Y: "<<vcd.Y<<", Z: "<<vcd.Z<<endl;
+         //std::cout<< myaddr<<": displayNeighborTable, at time: "<<simTime()<<endl;
+    }
+    std::cout<<endl;
+}
+// generate W coordination
+void VCap::generateW(){
+
+    if(isW){
+        std::cout<<myaddr<<": generateW, I am anchor W, isW: "<<isW<<", at time:"<<simTime()<<endl;
+        setW(0);
+        msgW * msgw=new msgW();
+
+        pathTable* pt=new pathTable;
+        pathTable::iterator ptit=pt->begin();
+        pt->insert(ptit,myaddr);
+        msgw->setPath( *pt);
+
+        msgw->setSrcIP(myaddr);
+        msgw->setSrcW(getW());
+        msgw->setPhase(PHASE_W);
+        msgw->setHop(1);
+        forward(msgw,neighborTable);
+
+        /*
+        msgNeighborDisc* neighborupdate=new msgNeighborDisc;
+        neighborupdate->setSrcIP(myaddr);
+        neighborupdate->setW(getW());
+        std::cout<< myaddr<<": generateW, anchor W inform neighbor he is the anchor W: "<<neighborupdate->getW()<<endl ;
+        forward(neighborupdate, neighborTable);
+       */
+       // std::cout<<myaddr<<": generateW, msgW generated, msg kind: "<<msgw<<endl;
+    }
+    else if (!isW)
+        std::cout<<myaddr<<": generateW, I am not anchor W, isW: "<<isW<<", at time:"<<simTime()<<endl;
+        return;
+
+}
+// update only one hop neighbor
+void VCap::updateNeighborTable(){
+        msgNeighborDisc* neighborupdate=new msgNeighborDisc;
+        neighborupdate->setSrcIP(myaddr);
+
+        neighborupdate->setW(getW());
+        neighborupdate->setX(getX());
+
+        neighborupdate->setY(getY());
+        neighborupdate->setZ(getZ());
+
+        std::cout<< myaddr<<": updateNeighborTable, set msgNeighborDisc W, "<<neighborupdate->getW()<<"at time:"<<simTime()<<endl ;
+        forward(neighborupdate, neighborTable);
+
+
+}
+

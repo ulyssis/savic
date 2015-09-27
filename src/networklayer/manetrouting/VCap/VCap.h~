@@ -1,0 +1,179 @@
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with this program.  If not, see http://www.gnu.org/licenses/.
+//
+
+#ifndef VCAP_H_
+#define VCAP_H_
+
+#include <tr1/unordered_set>
+#include <tr1/unordered_map>
+
+
+#include "omnetpp.h"
+#include "ManetRoutingBase.h"
+#include "InterfaceTableAccess.h"
+
+
+#include "msgNeighborDisc_m.h"
+#include "msgW_m.h"
+#include "msgToRoute_m.h"
+#include "msgNeighborDisc.h"
+
+
+#define HOP1_NEIGHBOR 1
+#define HOP2_NEIGHBOR 2
+#define INFINIYDIS 10000
+
+
+#define NEIGHDISC_FINISH 0.15// neighbor discovery finished, next step:w generation
+#define W_GENERATION_FINISH 1.5//w is generated, next step: update neighbor table
+#define X_ELECT 1.6// neighbortable updated, next step: elect anchors X
+#define X_GENERATION_FINISH 1.7// elect anchors X finished, next step:update neighbor table
+
+#define Y_ELECT 1.8 //update neighbor table finished, next step: elect anchor Y
+#define Y_GENERATION_FINISH 2.0//neighbortable updated, next step: elect anchors Z
+
+#define Z_ELECT 2.1//update neighbor table finished, next step: elect anchor Z
+#define Z_GENERATION_FINISH 2.2//neighbortable updated, next step: ready to route
+#define GLOBALTABLE_FINISHED 2.4
+
+#define READY_TO_ROUTE 2.3
+
+typedef std::tr1::unordered_map<IPv4Address,VCoord,hashIPv4Address> NeighborTable ;
+//typedef std::vector<int> VCoordHop;// coordinate WXYZ and the hop of neighbor
+//typedef std::map<IPv4Address,VCoordHop,hashIPv4Address> NeighborTable ;
+
+
+class VCap : public ManetRoutingBase{
+
+public:
+
+        int numInitStages() const  {return 5;}
+        void initialize(int stage);
+
+        void neighborDisc(msgNeighborDisc *msg,int hop);
+        void handleMessage(cMessage *msg);
+        void handleWMsg(msgW *msg);
+        void handleNeighborDisc(msgNeighborDisc *msg);
+        void  handleToRouteMsg(msgToRoute * msg);
+        void generateW();// generate W coordinate for all nodes
+    // elect X Y Z
+        void electX();
+        void electY();
+        void electZ();
+
+        bool equal(const msgNeighborDisc& a, const msgNeighborDisc& b);
+        //forward msg to all node in NeighborTable
+        virtual void forward(cPacket *msg,NeighborTable);
+        //forward msg to ip
+        virtual void forward(cPacket *msg,IPv4Address ip);
+        bool XYRule(int x, int y);
+        // return a table of neighbor for forwarding according to destination virtual coordinate destvc
+        NeighborTable routeCal(VCoord destvc);
+        void getGlobalTable();
+        virtual uint32_t getRoute(const Uint128 &, std::vector<Uint128> &);
+
+        virtual bool getNextHop(const Uint128 &, Uint128 &add, int &iface, double &cost);
+
+        virtual void setRefreshRoute(const Uint128 &destination, const Uint128 & nextHop,bool isReverse);
+
+        virtual bool isProactive() ;
+
+        virtual bool isOurType(cPacket *);
+
+        virtual bool getDestAddress(cPacket *, Uint128 &);
+
+
+        int getW();
+        int getX();
+        int getY();
+        int getZ();
+
+        void setW(int);
+        void setX(int);
+        void setY(int);
+        void setZ(int);
+
+        VCoord getMyvc();
+        IPv4Address getMyaddr();
+
+
+
+
+
+private:
+        IRoutingTable* routingTable;
+
+        IPv4Address myaddr;
+        VCoord myvc;
+
+        bool isW, isX,isY,isZ;
+        // the node's own coordinate
+        int W,X,Y,Z;
+        // srcWmax and IPmax are used to controlthe min src W and max ip received at a node in pahse_x _y and _z
+        // same for srcXmax and gamma
+        int srcWmax;
+        IPv4Address IPmax;
+
+        int srcXmax;
+        int gamma;
+
+
+        int trueHit;
+        int falseHit;
+        int missed;
+
+          // self msg when neighbor disc is finished
+         cMessage * neighborfinish;
+         cMessage * generateWfinish;
+         cMessage * electXbegin;
+         cMessage * generateXfinish;
+         cMessage * electYbegin;
+         cMessage * generateYfinish;
+         cMessage * electZbegin;
+         cMessage * generateZfinish;
+         cMessage * readyToRoute;
+
+         SimTime startTime;
+
+
+
+        NeighborTable neighborTable;
+        NeighborTable globalTable;
+
+public:
+        // process NeighborEntry
+         void addEntry(IPv4Address ip,VCoord vc);
+         void updateEntry(IPv4Address ip,VCoord vc);//
+         bool isEntryExisted (IPv4Address ip);//if the ip is existed in the table
+         bool isUpdate(IPv4Address ip,VCoord vc);
+         void updateNeighborRoute(const IPv4Address& dst);
+
+         void updateNeighborTable();
+
+         void displayNeighborTable(NeighborTable);
+
+         virtual void finish();
+
+public:
+
+         VCap();
+        virtual ~VCap();
+
+
+
+
+};
+
+#endif /* VCAP_H_ */

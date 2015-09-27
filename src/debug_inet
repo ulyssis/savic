@@ -1,0 +1,11 @@
+#! /bin/sh
+DIR=`dirname $0`
+
+if [ -x $DIR/inet -o -x $DIR/inet.exe ]; then
+  ddd $DIR/inet -n $DIR/../examples:$DIR $*
+else
+  #ddd opp_run --debugger 'gdb --args opp_run -l $DIR/inet -n $DIR/../examples:$DIR $*'
+  ddd opp_run --debugger gdb --args opp_run "-l inet" -n ../examples:. $*
+  #gdb --args opp_run
+  #gdb --args opp_run -l $DIR/inet -n $DIR/../examples:$DIR $*
+fi

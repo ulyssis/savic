@@ -1,0 +1,4 @@
+based on SEARCH paper.
+
+Peoritically, source node sends out routing request msg on each channel.
+The routing table is set, but will peritically updated!
