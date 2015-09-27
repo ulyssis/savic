@@ -1,6 +1,6 @@
 The routing scheme is implemented on the basis of Omnet++ 4.3. To try our model, please download our codes, and integrated them into omnet++4.3 framework.
 
 
-- The implementation is in src/networklayer/manetrouting/VCap. 
+- The implementation is in src/networklayer/manetrouting/VCap.cc 
 - Priamry users' activity is implemented in src/world/radio.
 - The parimary users' influences on secondary users are implemented in src/world/radio/ChannelControl.cc and ChannelAccess.cc
