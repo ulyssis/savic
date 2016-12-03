@@ -1,0 +1,9 @@
+SAVIC scheme is implemented on the basis of INET (v 2.1.0) under the OMNeT++ (4.2) frameworkl.
+(OMNeT++ (https://omnetpp.org/) is OMNeT++ is an extensible, modular, component-based C++ simulation library and framework, primarily for building network simulators.)
+
+
+How to use the codes of SAVIC:
+
+1. install Omentpp 4.2
+2. enter src folder, run make
+
