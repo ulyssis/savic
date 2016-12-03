@@ -6,4 +6,5 @@ How to use the codes of SAVIC:
 
 1. install Omentpp 4.2
 2. enter src folder, run make
+3. SAVIC is in networklayer/manetrouting/
 
