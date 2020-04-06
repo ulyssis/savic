@@ -1,10 +1,19 @@
-SAVIC scheme is implemented on the basis of INET (v 2.1.0) under the OMNeT++ (4.2) frameworkl.
-(OMNeT++ (https://omnetpp.org/) is OMNeT++ is an extensible, modular, component-based C++ simulation library and framework, primarily for building network simulators.)
+SAVIC is routing scheme in wireless networks, which is implemented on the basis of INET (v 2.1.0) under the OMNeT++ (4.2) frameworkl.
+
+OMNeT++ (https://omnetpp.org/) is OMNeT++ is an extensible, modular, component-based C++ simulation library and framework, primarily for building network simulators.
 
 
-How to use the codes of SAVIC:
+How to run SAVIC:
 
-1. install Omentpp 4.2
+1. install Omentpp 4.2 (https://omnetpp.org/software/2012/03/26/omnet-422-released.html)
 2. enter src folder, run make
 3. SAVIC is in networklayer/manetrouting/
+
+
+Good to know:
+
+The scheme can be improved by modifications in 
+- The proposed routing strategy is implemented in src/networklayer/manetrouting/VCap.cc 
+- In order to changet the radio behavior in the cognitive raio networks, the parimary users' influences on secondary users are implemented in src/world/radio/ChannelControl.cc and ChannelAccess.cc
+- Priamry users' activity is implemented in src/world/radio
 
