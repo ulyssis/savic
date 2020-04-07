@@ -10,9 +10,8 @@ How to run SAVIC:
 3. SAVIC is in networklayer/manetrouting/
 
 
-Good to know:
+In order to improve/modify the scheme:
 
-The scheme can be improved by modifications in 
 - The proposed routing strategy is implemented in src/networklayer/manetrouting/VCap.cc 
 - In order to changet the radio behavior in the cognitive raio networks, the parimary users' influences on secondary users are implemented in src/world/radio/ChannelControl.cc and ChannelAccess.cc
 - Priamry users' activity is implemented in src/world/radio
